@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TardigradeCS · resilient CS agent</title>
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: #131a23;
+    --panel-2: #1a2230;
+    --border: #243042;
+    --text: #e6edf3;
+    --muted: #8b9bb0;
+    --accent: #7ee0a8;
+    --warn: #f5b970;
+    --err: #f47474;
+    --tier-agent: #7ee0a8;
+    --tier-embeddings: #7ec8e0;
+    --tier-rules: #f5b970;
+    --bubble-user: #1f3a4d;
+    --bubble-bot: #1a2230;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text);
+               font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  .wrap { display: grid; grid-template-columns: 320px 1fr; height: 100vh; }
+  aside { background: var(--panel); border-right: 1px solid var(--border); padding: 18px; overflow: auto; }
+  main { display: flex; flex-direction: column; height: 100vh; }
+  .brand { font-weight: 700; font-size: 18px; margin-bottom: 4px; }
+  .tag { font-size: 11px; color: var(--muted); letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 20px; }
+  h3 { margin: 20px 0 8px; font-size: 11px; color: var(--muted); letter-spacing: 0.6px; text-transform: uppercase; font-weight: 600; }
+  .scn { display: flex; flex-direction: column; gap: 6px; }
+  .scn button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+                padding: 8px 10px; text-align: left; cursor: pointer; font: inherit; transition: all 0.15s; }
+  .scn button:hover { background: var(--border); }
+  .scn button.active { background: #3a1f1f; border-color: var(--err); color: var(--err); }
+  .scn button .desc { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .scn button.active .desc { color: #f4a0a0; }
+  .clearbtn { background: var(--accent) !important; color: #062314 !important; font-weight: 600; border: none !important; }
+  .status { font-size: 12px; padding: 8px; background: var(--panel-2); border-radius: 4px; border: 1px solid var(--border); margin-top: 8px; }
+  .status .lbl { color: var(--muted); }
+  .status .val { color: var(--text); }
+  .status .val.warn { color: var(--warn); }
+  .status .val.err { color: var(--err); }
+
+  header { padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--panel); display: flex; justify-content: space-between; align-items: center; }
+  header .title { font-weight: 600; }
+  header .sub { font-size: 12px; color: var(--muted); }
+  .legend { display: flex; gap: 14px; font-size: 11px; }
+  .legend .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+  .dot.agent { background: var(--tier-agent); }
+  .dot.embeddings { background: var(--tier-embeddings); }
+  .dot.rules { background: var(--tier-rules); }
+
+  .chat { flex: 1; overflow: auto; padding: 24px; display: flex; flex-direction: column; gap: 14px; }
+  .msg { max-width: 720px; }
+  .msg.user { align-self: flex-end; }
+  .bubble { padding: 12px 14px; border-radius: 10px; white-space: pre-wrap; }
+  .msg.user .bubble { background: var(--bubble-user); }
+  .msg.bot .bubble { background: var(--bubble-bot); border: 1px solid var(--border); }
+  .tier-strip { font-size: 11px; color: var(--muted); margin-top: 6px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .tier-strip .pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel); }
+  .tier-strip .pill.fail { color: var(--err); border-color: #4a2020; background: #2a1414; }
+  .tier-strip .pill.served { color: #062314; background: var(--accent); border-color: var(--accent); font-weight: 600; }
+  .tier-strip .pill.served.embeddings { background: var(--tier-embeddings); }
+  .tier-strip .pill.served.rules { background: var(--tier-rules); }
+  .tier-strip .meta { color: var(--muted); }
+
+  form { display: flex; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--border); background: var(--panel); }
+  textarea { flex: 1; resize: none; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+             border-radius: 6px; padding: 10px 12px; font: inherit; min-height: 44px; max-height: 140px; }
+  textarea:focus { outline: none; border-color: var(--accent); }
+  button.send { background: var(--accent); color: #062314; border: none; border-radius: 6px; padding: 0 18px;
+                font-weight: 600; cursor: pointer; }
+  button.send:disabled { opacity: 0.5; cursor: not-allowed; }
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--muted); border-top-color: transparent;
+             border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty { color: var(--muted); text-align: center; padding: 80px 20px; }
+  .empty .hint { margin-top: 8px; font-size: 12px; }
+  code { background: var(--panel-2); padding: 1px 5px; border-radius: 3px; color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <aside>
+    <div class="brand">🐻 TardigradeCS</div>
+    <div class="tag">resilient customer service</div>
+
+    <h3>Chaos panel — break stuff</h3>
+    <div class="scn" id="scnList"></div>
+    <button class="clearbtn" id="clearBtn" style="margin-top:10px; padding:8px 10px; border-radius:6px; cursor:pointer; font:inherit;">Clear chaos</button>
+
+    <h3>Current state</h3>
+    <div class="status" id="statusBox">loading…</div>
+
+    <h3>Try these</h3>
+    <div style="font-size:12px;color:var(--muted);line-height:1.7">
+      • <code>where is order TGS-1002?</code><br/>
+      • <code>I need a refund for TGS-1001</code><br/>
+      • <code>how long does shipping take?</code><br/>
+      • <code>speak to a human</code><br/>
+    </div>
+  </aside>
+
+  <main>
+    <header>
+      <div>
+        <div class="title">Customer chat</div>
+        <div class="sub">3-tier waterfall · TF Gateway → Embeddings → Rules</div>
+      </div>
+      <div class="legend">
+        <span><span class="dot agent"></span>agent</span>
+        <span><span class="dot embeddings"></span>embeddings</span>
+        <span><span class="dot rules"></span>rules</span>
+      </div>
+    </header>
+
+    <div class="chat" id="chat">
+      <div class="empty">
+        Send a message to start.
+        <div class="hint">Break stuff in the chaos panel on the left and watch the cascade flip tiers live.</div>
+      </div>
+    </div>
+
+    <form id="form">
+      <textarea id="input" placeholder="Type a customer message and press Enter…" rows="2"></textarea>
+      <button class="send" id="sendBtn" type="submit">Send</button>
+    </form>
+  </main>
+</div>
+
+<script>
+const SCENARIOS = [
+  {key: "primary-down", label: "Break primary LLM",
+   desc: "Swap primary VM → broken VM. Gateway falls back to secondary provider."},
+  {key: "rate-limit", label: "Hit rate limit",
+   desc: "Primary returns 429 on every call. Gateway retries + falls back."},
+  {key: "all-providers-down", label: "Cascade outage",
+   desc: "Every provider in the chain fails. Agent tier blows up; embeddings catches it."},
+  {key: "no-agent", label: "Force agent off",
+   desc: "Skip tier 1 entirely. Embeddings tier answers."},
+  {key: "no-embeddings", label: "Force embeddings off",
+   desc: "Skip tier 2 entirely (FAQ lookup disabled)."},
+  {key: "no-agent-no-embeddings", label: "Force ML floor (tier 3 only)",
+   desc: "Both upper tiers off. Rule-based replies only — but the agent still always answers."},
+];
+
+const history = [];
+
+function renderScenarios(active) {
+  const list = document.getElementById("scnList");
+  list.innerHTML = "";
+  for (const s of SCENARIOS) {
+    const b = document.createElement("button");
+    b.className = active === s.key ? "active" : "";
+    b.innerHTML = `${s.label}<div class="desc">${s.desc}</div>`;
+    b.onclick = async () => {
+      await fetch(`/chaos/break/${s.key}`, {method: "POST"});
+      refreshStatus();
+    };
+    list.appendChild(b);
+  }
+}
+
+async function refreshStatus() {
+  const r = await fetch("/chaos/status");
+  const s = await r.json();
+  const box = document.getElementById("statusBox");
+  const scn = s.scenario || "(none)";
+  const tiers = (s.disabled_tiers || []).join(", ") || "(none)";
+  const guard = s.hard_disabled
+    ? `<div><span class="lbl">guardrail:</span> <span class="val err">PRODUCTION (chaos disabled)</span></div>`
+    : "";
+  box.innerHTML = `
+    <div><span class="lbl">scenario:</span> <span class="val ${s.scenario ? "warn" : ""}">${scn}</span></div>
+    <div><span class="lbl">disabled tiers:</span> <span class="val ${s.disabled_tiers.length ? "warn" : ""}">${tiers}</span></div>
+    ${guard}`;
+  renderScenarios(s.scenario || (s.disabled_tiers[0] && SCENARIOS.find(x => x.key.includes(s.disabled_tiers.join("-")))?.key));
+}
+
+document.getElementById("clearBtn").onclick = async () => {
+  await fetch("/chaos/clear", {method: "POST"});
+  refreshStatus();
+};
+
+function tierColor(tier) {
+  return tier === "agent" ? "agent" : tier === "embeddings" ? "embeddings" : "rules";
+}
+
+function appendMessage(role, text, served_by, attempts, latency_ms, meta) {
+  const chat = document.getElementById("chat");
+  const empty = chat.querySelector(".empty");
+  if (empty) empty.remove();
+  const wrap = document.createElement("div");
+  wrap.className = `msg ${role}`;
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+  bubble.textContent = text;
+  wrap.appendChild(bubble);
+
+  if (role === "bot") {
+    const strip = document.createElement("div");
+    strip.className = "tier-strip";
+    for (const a of attempts) {
+      const pill = document.createElement("span");
+      if (a.ok) {
+        pill.className = `pill served ${tierColor(a.tier)}`;
+        pill.innerHTML = `★ ${a.tier} · ${a.latency_ms.toFixed(0)}ms`;
+      } else {
+        pill.className = "pill fail";
+        pill.innerHTML = `✗ ${a.tier}: ${a.note}`;
+      }
+      strip.appendChild(pill);
+    }
+    const meta_pill = document.createElement("span");
+    meta_pill.className = "meta";
+    meta_pill.textContent = `total ${latency_ms.toFixed(0)}ms`;
+    strip.appendChild(meta_pill);
+    if (meta && meta.resolved_model) {
+      const m = document.createElement("span");
+      m.className = "meta";
+      m.textContent = `· resolved ${meta.resolved_model}`;
+      strip.appendChild(m);
+    }
+    if (meta && meta.similarity != null) {
+      const m = document.createElement("span");
+      m.className = "meta";
+      m.textContent = `· sim ${meta.similarity}`;
+      strip.appendChild(m);
+    }
+    if (meta && meta.ticket_id) {
+      const m = document.createElement("span");
+      m.className = "meta";
+      m.textContent = `· ${meta.ticket_id}`;
+      strip.appendChild(m);
+    }
+    wrap.appendChild(strip);
+  }
+  chat.appendChild(wrap);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+document.getElementById("form").onsubmit = async (e) => {
+  e.preventDefault();
+  const input = document.getElementById("input");
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  appendMessage("user", text);
+  history.push({role: "user", content: text});
+  const sendBtn = document.getElementById("sendBtn");
+  sendBtn.disabled = true;
+  sendBtn.innerHTML = '<span class="spinner"></span>';
+  try {
+    const r = await fetch("/chat", {
+      method: "POST", headers: {"content-type": "application/json"},
+      body: JSON.stringify({message: text, history: history.slice(0, -1)}),
+    });
+    const data = await r.json();
+    appendMessage("bot", data.reply, data.served_by, data.attempts, data.latency_ms, data.meta);
+    history.push({role: "assistant", content: data.reply});
+  } catch (err) {
+    appendMessage("bot", `(network error: ${err.message})`, "rules", [{tier:"network",ok:false,latency_ms:0,note:err.message}], 0, {});
+  } finally {
+    sendBtn.disabled = false;
+    sendBtn.textContent = "Send";
+  }
+};
+
+document.getElementById("input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    document.getElementById("form").requestSubmit();
+  }
+});
+
+refreshStatus();
+setInterval(refreshStatus, 5000);
+</script>
+</body>
+</html>

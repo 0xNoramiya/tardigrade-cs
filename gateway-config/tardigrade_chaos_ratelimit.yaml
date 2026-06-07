@@ -1,0 +1,35 @@
+# Chaos VM #2 — "rate-limit storm".
+# Priority-0 target is a broken integration that 4xx's every call; the retry
+# config tries 3 times with 80ms backoff on rate-limit class codes, then falls
+# back to a working OpenAI integration. Models the user-visible experience of
+# "primary throttled, fall over fast".
+name: tardigrade-chaos-ratelimit
+type: provider-account/virtual-model
+collaborators:
+  - role_id: provider-account-manager
+    subject: user:rhaikal91@gmail.com
+  - role_id: provider-account-access
+    subject: team:everyone
+integrations:
+  - name: tardigrade-chaos-ratelimit
+    type: integration/model/virtual
+    model_types: [chat]
+    routing_config:
+      type: priority-based-routing
+      load_balance_targets:
+        - target: anthropic-broken/claude-sonnet-4-6
+          priority: 0
+          fallback_candidate: true
+          fallback_status_codes: ["400", "401", "403", "404", "408", "429", "500", "502", "503", "504"]
+          retry_config:
+            attempts: 3
+            delay: 80
+            on_status_codes: ["429", "500", "502", "503", "504"]
+        - target: openai/gpt-4o-mini
+          priority: 1
+          fallback_candidate: true
+          fallback_status_codes: ["401", "403", "404", "408", "429", "500", "502", "503", "504"]
+          retry_config:
+            attempts: 1
+            delay: 100
+            on_status_codes: ["429", "500", "502", "503", "504"]
