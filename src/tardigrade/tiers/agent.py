@@ -16,7 +16,9 @@ from typing import Any
 import httpx
 from openai import AsyncOpenAI
 
-from tardigrade.chaos import current_model_swap
+import asyncio
+
+from tardigrade.chaos import current_latency_inject, current_model_swap
 from tardigrade.config import get_settings
 from tardigrade.guardrails import GuardrailBlock, validate_tool_args
 from tardigrade.mcp_client import call_tool, list_tools
@@ -68,6 +70,17 @@ async def answer(message: str, history: Sequence[dict[str, str]] | None = None) 
 
     tools = await list_tools()
     tool_calls_made: list[dict[str, Any]] = []
+
+    # Latency-class chaos — simulate upstream SLA breach. We pause briefly
+    # to make the slowness feel real in the UI, then raise as if the gateway
+    # had timed out. The waterfall cascades to tier 2 in a few seconds
+    # instead of after the configured (potentially long) delay.
+    if delay := current_latency_inject():
+        await asyncio.sleep(min(delay, 3.0))
+        raise RuntimeError(
+            f"upstream slow-response: exceeded {int(delay)}s SLA — "
+            "agent tier giving up so the customer doesn't wait."
+        )
 
     for _ in range(4):  # at most 4 tool-call hops
         resp = await client.chat.completions.create(

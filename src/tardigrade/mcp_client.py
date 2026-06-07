@@ -37,6 +37,21 @@ def _tools_chaos_active() -> bool:
     return ChaosState.load().scenario == "tools-down"
 
 
+def _bad_output_active() -> bool:
+    from tardigrade.chaos import ChaosState
+    return ChaosState.load().scenario == "bad-output"
+
+
+# A deterministic "looks malformed" payload — the agent's LLM sees a tool
+# result that is clearly broken upstream data and has to recover (typically
+# by apologizing + asking the customer to verify the order ID, or by
+# escalating). This is the "bad intermediate outputs" failure mode.
+_BAD_OUTPUT_PAYLOAD = (
+    '{"status":"upstream_decoding_error","raw":"\\u0000\\u0000\\u0000",'
+    '"order_id":null,"items":[],"warning":"GARBLED_RESPONSE_FROM_BACKEND"}'
+)
+
+
 @asynccontextmanager
 async def _session() -> AsyncIterator[ClientSession | None]:
     """Open a fresh MCP session, yield it, tear it down. Yields None when no
@@ -106,6 +121,11 @@ async def list_tools() -> list[dict[str, Any]]:
 async def call_tool(name: str, arguments: dict[str, Any]) -> str:
     if _tools_chaos_active():
         return f"(tool {name!r} unavailable — MCP Gateway returned 503)"
+    if _bad_output_active():
+        # The upstream tool would normally succeed, but its response is
+        # garbled / corrupted before reaching the agent. The LLM has to
+        # notice it can't act on this and recover gracefully.
+        return _BAD_OUTPUT_PAYLOAD
     async with _session() as session:
         if session is None:
             return f"(tool {name!r} unavailable — MCP transport not reachable)"

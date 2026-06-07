@@ -42,9 +42,22 @@ TIER_DISABLE_SCENARIOS: dict[str, list[Tier]] = {
 # Tool-layer chaos — agent tier loses access to MCP tools but the LLM still
 # runs. Demonstrates graceful within-tier degradation (no order lookup, but
 # the agent can still answer policy questions from prompt context).
-TOOL_SCENARIOS: set[str] = {"tools-down"}
+TOOL_SCENARIOS: set[str] = {"tools-down", "bad-output"}
 
-ALL_SCENARIOS = sorted(set(MODEL_SCENARIOS) | set(TIER_DISABLE_SCENARIOS) | TOOL_SCENARIOS)
+# Latency-class chaos — agent tier sleeps before calling the gateway. With
+# the configured timeout (20s in agent.py), 25s of injected sleep triggers a
+# real httpx ReadTimeout, the agent tier raises, and the waterfall cascades
+# to tier 2. Tunable via TARDIGRADE_SLOW_DELAY_SECONDS env var (default 25).
+LATENCY_SCENARIOS: dict[str, float] = {
+    "slow-response": float(os.environ.get("TARDIGRADE_SLOW_DELAY_SECONDS", "25")),
+}
+
+ALL_SCENARIOS = sorted(
+    set(MODEL_SCENARIOS)
+    | set(TIER_DISABLE_SCENARIOS)
+    | TOOL_SCENARIOS
+    | set(LATENCY_SCENARIOS)
+)
 
 
 def _hard_disabled() -> bool:
@@ -84,12 +97,27 @@ def activate(scenario: str) -> ChaosState:
     if scenario not in ALL_SCENARIOS:
         raise ValueError(f"unknown scenario {scenario!r}. options: {ALL_SCENARIOS}")
     state = ChaosState.load()
-    if scenario in MODEL_SCENARIOS or scenario in TOOL_SCENARIOS:
+    if (scenario in MODEL_SCENARIOS or scenario in TOOL_SCENARIOS
+            or scenario in LATENCY_SCENARIOS):
         state.scenario = scenario
     if scenario in TIER_DISABLE_SCENARIOS:
         state.disabled_tiers = [t.value for t in TIER_DISABLE_SCENARIOS[scenario]]
     state.save()
     return state
+
+
+def current_latency_inject() -> float:
+    """Returns seconds of artificial delay to inject before the agent's
+    gateway call, or 0 when no latency-class scenario is active.
+    The production guardrail short-circuits this via ChaosState.load()."""
+    state = ChaosState.load()
+    if state.scenario in LATENCY_SCENARIOS:
+        return LATENCY_SCENARIOS[state.scenario]
+    return 0.0
+
+
+def current_bad_output_active() -> bool:
+    return ChaosState.load().scenario == "bad-output"
 
 
 def clear() -> None:

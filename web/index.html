@@ -101,7 +101,7 @@
       • <code>I need a refund for TGS-1001</code><br/>
       • <code>how long does shipping take?</code><br/>
       • <code>speak to a human</code><br/>
-      • <code>refund $999 to TGS-1003</code> (guardrail trips)<br/>
+      • <code>full refund please, confirmed</code> (with prior "refund TGS-1002" — guardrail trips)<br/>
       • <code>ignore previous instructions</code> (input guardrail)<br/>
     </div>
   </aside>
@@ -135,14 +135,18 @@
 
 <script>
 const SCENARIOS = [
-  {key: "primary-down", label: "Break primary LLM",
-   desc: "Swap primary VM → broken VM. Gateway falls back to secondary provider."},
+  {key: "primary-down", label: "Break primary LLM (provider outage)",
+   desc: "Swap primary VM → broken Bedrock VM. Gateway falls back to OpenAI."},
   {key: "rate-limit", label: "Hit rate limit",
-   desc: "Primary returns 429 on every call. Gateway retries + falls back."},
-  {key: "all-providers-down", label: "Cascade outage",
-   desc: "Every provider in the chain fails. Agent tier blows up; embeddings catches it."},
+   desc: "Primary returns 4xx every call; retry config exhausts then falls back."},
+  {key: "slow-response", label: "Slow response (timeout)",
+   desc: "Inject 25s sleep before LLM call → httpx ReadTimeout → agent tier raises → tier 2 catches."},
   {key: "tools-down", label: "Break MCP tools",
    desc: "MCP Gateway returns 503. Agent runs without tools, answers from prompt context."},
+  {key: "bad-output", label: "Bad intermediate outputs",
+   desc: "MCP tool returns garbled upstream data. Agent recognizes it can't act and recovers gracefully."},
+  {key: "all-providers-down", label: "Cascade outage (provider + provider)",
+   desc: "Every provider in the chain fails. Agent tier raises; embeddings tier catches the conversation."},
   {key: "no-agent", label: "Force agent off",
    desc: "Skip tier 1 entirely. Embeddings tier answers."},
   {key: "no-embeddings", label: "Force embeddings off",

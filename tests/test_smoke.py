@@ -136,6 +136,36 @@ def test_current_model_swap_with_chaos():
     assert scn == "primary-down"
 
 
+def test_slow_response_scenario_injects_latency():
+    chaos.clear()
+    assert chaos.current_latency_inject() == 0.0
+    chaos.activate("slow-response")
+    delay = chaos.current_latency_inject()
+    assert delay >= 1.0  # default is 25s — well over the 20s httpx timeout
+
+
+def test_bad_output_scenario():
+    chaos.clear()
+    assert chaos.current_bad_output_active() is False
+    chaos.activate("bad-output")
+    assert chaos.current_bad_output_active() is True
+
+
+def test_all_six_stress_test_categories_have_scenarios():
+    """Judging brief lists 6 failure categories — verify every one is wired."""
+    categories = {
+        "rate_limits":              "rate-limit",
+        "provider_outage":          "primary-down",
+        "slow_responses":           "slow-response",
+        "tool_failures":            "tools-down",
+        "bad_intermediate_outputs": "bad-output",
+        "cascading_errors":         "all-providers-down",
+    }
+    for cat, scenario in categories.items():
+        assert scenario in chaos.ALL_SCENARIOS, \
+            f"category {cat!r} expects scenario {scenario!r} to exist"
+
+
 def test_production_guardrail_disables_chaos(monkeypatch):
     chaos.activate("primary-down")
     monkeypatch.setenv("TARDIGRADE_DISABLE_CHAOS", "1")

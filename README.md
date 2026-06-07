@@ -42,13 +42,17 @@ radiation dose, and a decade of dehydration. It just keeps going.
 
 ## What you get in a demo
 
-| Chaos button | What breaks | What happens |
-|---|---|---|
-| **Break primary LLM** | TF Virtual Model swapped to one whose priority-0 target has an invalid API key | Real 401 from the upstream, TF's retry+fallback kicks in, secondary provider serves the response. Conversation looks normal. |
-| **Hit rate limit** | Priority-0 target burns retries on 429-class codes | Latency bumps ~150ms then fallback fires. |
-| **Cascade outage** | Every provider in the chain has an invalid key | Agent tier raises. Embeddings tier semantic-searches the FAQ and answers. Customer never sees the outage. |
-| **Break MCP tools** | MCP transport returns 503 on every call | Agent loses tool access. LLM still answers from prompt context (policy questions still work; order-specific questions degrade to "share your order number and I'll escalate"). |
-| **Force ML floor** | Tiers 1 + 2 disabled | Tier 3 rule engine answers with a canned reply + ticket ID. Tested at 22/22 in the test suite — it never raises. |
+Every category in the Resilient Agents judging brief maps to a chaos button:
+
+| Stress-test category | Chaos button | What breaks | What happens |
+|---|---|---|---|
+| **Provider / model outage** | `primary-down` | TF Virtual Model swapped to one whose priority-0 target has an invalid API key | Real `"Invalid API Key format"` from AWS Bedrock, TF's retry+fallback kicks in, OpenAI serves the response. Conversation looks normal. |
+| **Rate limits** | `rate-limit` | Priority-0 target burns retries on 429-class codes (3 attempts, 80ms backoff) | Latency bumps ~150ms then fallback fires. |
+| **Slow responses** | `slow-response` | Agent tier raises after a 3s pause as if upstream blew the SLA | Tier 2 catches the conversation — customer waits ~3s instead of timing out at 20s. |
+| **Tool failures** | `tools-down` | MCP transport returns 503 on every `call_tool` | Agent loses tool access. LLM answers from prompt context (policy questions still work; order-specific questions degrade to "share your order number and I'll escalate"). |
+| **Bad intermediate outputs** | `bad-output` | MCP tool returns garbled JSON (`{"status":"upstream_decoding_error","warning":"GARBLED_RESPONSE_FROM_BACKEND"}`) | Agent recognizes it can't act and asks the customer to confirm the order ID — graceful within-tier recovery, no cascade needed. |
+| **Cascading errors** | `all-providers-down` | Every provider in the chain has an invalid key | Agent tier raises. Embeddings tier semantic-searches the FAQ and answers. Customer never sees the outage. |
+| **Belt-and-suspenders floor** | `no-agent-no-embeddings` | Tiers 1 + 2 disabled | Tier 3 rule engine answers with a canned reply + ticket ID. Property-tested: it never raises. |
 
 ## Guardrails
 
