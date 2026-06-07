@@ -1,13 +1,13 @@
 # Chaos VM #3 — "cascade outage".
-# Both targets are deliberately broken. The gateway exhausts the chain and
-# returns an upstream error — which is the entire point: this proves the
-# tier 2 (embeddings) and tier 3 (rules) fallbacks engage when no LLM
+# Both Bedrock integrations are deliberately broken. The gateway exhausts the
+# chain and returns an upstream error — which is the entire point: this proves
+# the tier 2 (embeddings) and tier 3 (rules) fallbacks engage when no LLM
 # anywhere will answer.
 name: tardigrade-chaos-cascade
 type: provider-account/virtual-model
 collaborators:
   - role_id: provider-account-manager
-    subject: user:rhaikal91@gmail.com
+    subject: user:xnoramiya@gmail.com
   - role_id: provider-account-access
     subject: team:everyone
 integrations:
@@ -17,14 +17,14 @@ integrations:
     routing_config:
       type: priority-based-routing
       load_balance_targets:
-        - target: anthropic-broken/claude-sonnet-4-6
+        - target: aws-bedrock/global.anthropic.claude-sonnet-4-6
           priority: 0
           fallback_candidate: true
           fallback_status_codes: ["400", "401", "403", "404", "408", "429", "500", "502", "503", "504"]
           retry_config:
             attempts: 1
             delay: 50
-        - target: openai-broken/gpt-4o
+        - target: aws-bedrock/global.anthropic.claude-opus-4-8
           priority: 1
           fallback_candidate: true
           fallback_status_codes: ["400", "401", "403", "404", "408", "429", "500", "502", "503", "504"]

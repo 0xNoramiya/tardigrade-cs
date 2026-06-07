@@ -18,3 +18,4 @@ node_modules/
 htmlcov/
 state.json
 chaos-state.json
+video/

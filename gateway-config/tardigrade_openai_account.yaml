@@ -1,0 +1,22 @@
+# OpenAI provider account on the tardigrade tenant — provides the working
+# fallback target so the primary Virtual Model can serve real responses when
+# the broken Bedrock target at priority 0 returns 4xx.
+name: openai
+type: provider-account/openai
+auth_data:
+  type: api-key
+  api_key: <YOUR_OPENAI_API_KEY>   # rotate/replace before applying — never commit live keys
+collaborators:
+  - role_id: provider-account-manager
+    subject: user:xnoramiya@gmail.com
+  - role_id: provider-account-access
+    subject: team:everyone
+integrations:
+  - name: gpt-4o-mini
+    type: integration/model/openai
+    model_id: gpt-4o-mini
+    model_types: [chat]
+  - name: gpt-4o
+    type: integration/model/openai
+    model_id: gpt-4o
+    model_types: [chat]

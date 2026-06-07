@@ -1,18 +1,16 @@
 # Chaos VM #1 — "break primary LLM".
-# Priority-0 target is a pre-broken Anthropic integration (configured at the
-# provider-account level with an invalid API key). When the chaos engine
-# swaps the agent model to this VM, the gateway:
-#   - hits the broken primary, gets a real 401
+# Priority-0 target is the deliberately-broken AWS Bedrock integration
+# (configured at the provider-account level with a fake API key). When the
+# chaos engine swaps the agent's model to this VM, the gateway:
+#   - hits the broken Bedrock target, gets a real 4xx from upstream
 #   - retries per retry_config
-#   - falls back to openai-gpt-4o-mini
-#
-# This produces real provider failures in the observability tab — not faked
-# by the application layer.
+#   - falls back to openai/gpt-4o-mini (working)
+# Real failure, real fallback — nothing faked at the application layer.
 name: tardigrade-chaos-primary
 type: provider-account/virtual-model
 collaborators:
   - role_id: provider-account-manager
-    subject: user:rhaikal91@gmail.com
+    subject: user:xnoramiya@gmail.com
   - role_id: provider-account-access
     subject: team:everyone
 integrations:
@@ -22,11 +20,10 @@ integrations:
     routing_config:
       type: priority-based-routing
       load_balance_targets:
-        # Broken anthropic integration — invalid API key on the provider account.
-        - target: anthropic-broken/claude-sonnet-4-6
+        - target: aws-bedrock/global.anthropic.claude-sonnet-4-6
           priority: 0
           fallback_candidate: true
-          fallback_status_codes: ["401", "403", "404", "408", "429", "500", "502", "503", "504"]
+          fallback_status_codes: ["400", "401", "403", "404", "408", "429", "500", "502", "503", "504"]
           retry_config:
             attempts: 1
             delay: 50
@@ -39,9 +36,3 @@ integrations:
             attempts: 2
             delay: 100
             on_status_codes: ["429", "500", "502", "503", "504"]
-        - target: google-gemini/gemini-2.5-flash-lite
-          priority: 2
-          fallback_candidate: true
-          retry_config:
-            attempts: 1
-            delay: 100
