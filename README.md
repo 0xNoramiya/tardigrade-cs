@@ -2,15 +2,18 @@
 
 > Customer-service agent that keeps answering when the model, the tools, or the provider go down.
 
-Built on **TrueFoundry AI Gateway** (LLM routing + fallback + observability),
-**TrueFoundry MCP Gateway** (governed tool access), **Guardrails** (PII
-redaction + prompt-injection block + tool-argument validation), and **AWS
-Bedrock** (foundation model provider in the fallback chain).
+Built on **AWS Bedrock** (foundation models — Anthropic Claude Sonnet 4 & Opus 4
+served through Bedrock's managed inference), **TrueFoundry AI Gateway** (priority
+routing + fallback + observability across providers), **TrueFoundry MCP Gateway**
+(governed tool access), and **Guardrails** (PII redaction + prompt-injection
+block + tool-argument validation).
 
-[![python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![truefoundry](https://img.shields.io/badge/truefoundry-AI%20Gateway-7ee0a8)](https://www.truefoundry.com/ai-gateway)
-[![mcp](https://img.shields.io/badge/MCP-streamable--http%20+%20stdio-7ec8e0)](https://modelcontextprotocol.io/)
-[![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![AWS Bedrock](https://img.shields.io/badge/AWS-Bedrock-FF9900?logo=amazon-aws&logoColor=white)](https://aws.amazon.com/bedrock/)
+[![Claude on Bedrock](https://img.shields.io/badge/Claude-Sonnet%204%20%2B%20Opus%204-D97757?logo=anthropic&logoColor=white)](https://aws.amazon.com/bedrock/anthropic/)
+[![TrueFoundry](https://img.shields.io/badge/TrueFoundry-AI%20Gateway-7ee0a8)](https://www.truefoundry.com/ai-gateway)
+[![MCP](https://img.shields.io/badge/MCP-streamable--http%20%2B%20stdio-7ec8e0)](https://modelcontextprotocol.io/)
+[![Python](https://img.shields.io/badge/python-3.10+-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ---
 
@@ -108,21 +111,67 @@ tardigrade chaos status       # what's currently broken
 the chaos engine at every layer (model swap + tier disable) even if a stale
 state file is sitting on disk. Surfaces in `tardigrade doctor`.
 
+## AWS Bedrock
+
+AWS Bedrock is our **foundation model provider** — Anthropic Claude Sonnet 4
+and Claude Opus 4 served through Bedrock's managed inference plane. Bedrock
+gives us the headline-grade reasoning capacity (Claude) without us holding
+provider keys directly, and TrueFoundry's AI Gateway proxies every Bedrock
+call so we get unified routing, retry, and observability across Bedrock and
+the OpenAI fallbacks in the same chain.
+
+Two Bedrock model integrations are configured on this tenant's
+`aws-bedrock` provider account:
+
+| Bedrock model | Bedrock model id | Role |
+|---|---|---|
+| Anthropic Claude Sonnet 4 | `global.anthropic.claude-sonnet-4-6` | Primary reasoning model in the agent tier |
+| Anthropic Claude Opus 4 | `global.anthropic.claude-opus-4-8` | Heavy-reasoning fallback + chaos rate-limit target |
+
+Both are addressable through the OpenAI SDK as
+`model="aws-bedrock/global.anthropic.claude-sonnet-4-6"` (or `-opus-4-8`) when
+the gateway base URL is set — zero application code changes between calling
+OpenAI direct and calling Claude on Bedrock through TrueFoundry.
+
+> The hackathon tenant ships an `aws-bedrock` provider with an intentionally
+> fake API key — that's the chaos target. When the chaos engine swaps the
+> agent's Virtual Model to one whose priority-0 is Bedrock, the gateway gets
+> a real `"Invalid API Key format"` upstream error from AWS, runs real retries,
+> and falls over to OpenAI in real time. Nothing in the application layer
+> fakes the failure.
+
 ## TrueFoundry Virtual Model topology
 
-`gateway-config/tardigrade_primary.yaml` (priority-based routing):
+`gateway-config/tardigrade_primary.yaml` defines the working chain on the
+hackathon tenant (priority-based routing — lower priority preferred):
 
 ```
-priority 0  →  anthropic/claude-sonnet-4-6              (primary)
-priority 1  →  aws-bedrock/claude-3-5-sonnet            (commented; uncomment once model-access lands)
-priority 2  →  openai/gpt-4o-mini                       (fast & cheap fallback)
-priority 3  →  google-gemini/gemini-2.5-flash-lite      (last-ditch alt provider)
+priority 0  →  openai/gpt-4o-mini                               (working primary)
+priority 1  →  openai/gpt-4o                                    (in-provider fallback)
+priority 2  →  aws-bedrock/global.anthropic.claude-sonnet-4-6   (Claude on Bedrock — last-resort)
 ```
 
-Three additional chaos VMs (`tardigrade_chaos_*.yaml`) put deliberately-broken
-provider integrations at priority 0 so the chaos engine can swap to them
-without any application-layer faking — the gateway sees real 4xx/5xx, runs
-real retries, performs real fallback. The observability tab shows the same.
+The chaos VMs (`tardigrade_chaos_*.yaml`) put the broken AWS Bedrock
+integrations at priority 0 so the chaos engine can swap to them and the
+gateway exercises real fallback against real AWS upstream errors:
+
+```
+tardigrade-chaos-primary
+  priority 0  →  aws-bedrock/global.anthropic.claude-sonnet-4-6  (broken Bedrock — fails for real)
+  priority 1  →  openai/gpt-4o-mini                              (catches in real time)
+
+tardigrade-chaos-ratelimit
+  priority 0  →  aws-bedrock/global.anthropic.claude-opus-4-8    (broken Bedrock + retry-on-429)
+  priority 1  →  openai/gpt-4o-mini
+
+tardigrade-chaos-cascade
+  priority 0  →  aws-bedrock/global.anthropic.claude-sonnet-4-6  (broken Bedrock)
+  priority 1  →  aws-bedrock/global.anthropic.claude-opus-4-8    (broken Bedrock) → exhausts → tier 2 catches
+```
+
+Nothing in the application layer fakes a failure — the gateway sees real
+4xx from AWS Bedrock, runs real retries, performs real fallback. The
+observability tab shows the chain working live.
 
 ## MCP
 
@@ -154,7 +203,8 @@ Same tools, same agent code, zero config changes between dev and prod.
        │  └──────────────────────────────────┘   │
        │  ┌──────────────────────────────────┐   │
        │  │ 1  Agent tier                    │   │
-       │  │    OpenAI SDK  ─►  TF Gateway    │───┼──►  upstream LLMs (anthropic, openai, bedrock, gemini)
+       │  │    OpenAI SDK  ─►  TF Gateway    │───┼──►  AWS Bedrock (Claude Sonnet 4 / Opus 4)
+       │  │                                   │   │      + OpenAI (gpt-4o-mini, gpt-4o)
        │  │       │                           │   │
        │  │       ▼ tool calls                │   │
        │  │    MCP Gateway / local stdio     │───┼──►  order_lookup, refund (guardrail), track_shipment
