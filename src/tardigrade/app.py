@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from tardigrade import chaos as chaos_engine
+from tardigrade.guardrails import input_guardrail, redact_pii
 from tardigrade.tiers import Tier
 from tardigrade.tiers import agent, embeddings, rules
 from tardigrade.tiers.types import Reply
@@ -47,8 +48,27 @@ class ChatResponse(BaseModel):
 
 async def _waterfall(message: str, history: list[dict[str, str]]) -> ChatResponse:
     attempts: list[TierAttempt] = []
-    disabled = chaos_engine.disabled_tiers()
     start = time.perf_counter()
+
+    # --- Tier 0: Input guardrail (before any compute spend) ---
+    decision = input_guardrail(message)
+    if not decision.safe:
+        return ChatResponse(
+            reply=decision.text,
+            served_by="guardrail",
+            latency_ms=(time.perf_counter() - start) * 1000,
+            attempts=[TierAttempt(
+                tier="guardrail", ok=True,
+                latency_ms=(time.perf_counter() - start) * 1000,
+                note=f"blocked: {', '.join(decision.matched[:2])}",
+            )],
+            meta={"guardrail": "input", "matched": decision.matched},
+        )
+
+    # PII redaction on the message that goes to the LLM (real surfaces would
+    # tokenize + restore; for the demo we just mask).
+    message = redact_pii(message)
+    disabled = chaos_engine.disabled_tiers()
 
     # --- Tier 1: Agent ---
     if Tier.AGENT in disabled:

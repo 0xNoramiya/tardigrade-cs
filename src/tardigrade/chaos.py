@@ -39,7 +39,12 @@ TIER_DISABLE_SCENARIOS: dict[str, list[Tier]] = {
     "no-agent-no-embeddings": [Tier.AGENT, Tier.EMBEDDINGS],
 }
 
-ALL_SCENARIOS = sorted(set(MODEL_SCENARIOS) | set(TIER_DISABLE_SCENARIOS))
+# Tool-layer chaos — agent tier loses access to MCP tools but the LLM still
+# runs. Demonstrates graceful within-tier degradation (no order lookup, but
+# the agent can still answer policy questions from prompt context).
+TOOL_SCENARIOS: set[str] = {"tools-down"}
+
+ALL_SCENARIOS = sorted(set(MODEL_SCENARIOS) | set(TIER_DISABLE_SCENARIOS) | TOOL_SCENARIOS)
 
 
 def _hard_disabled() -> bool:
@@ -79,7 +84,7 @@ def activate(scenario: str) -> ChaosState:
     if scenario not in ALL_SCENARIOS:
         raise ValueError(f"unknown scenario {scenario!r}. options: {ALL_SCENARIOS}")
     state = ChaosState.load()
-    if scenario in MODEL_SCENARIOS:
+    if scenario in MODEL_SCENARIOS or scenario in TOOL_SCENARIOS:
         state.scenario = scenario
     if scenario in TIER_DISABLE_SCENARIOS:
         state.disabled_tiers = [t.value for t in TIER_DISABLE_SCENARIOS[scenario]]

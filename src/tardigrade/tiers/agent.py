@@ -18,6 +18,7 @@ from openai import AsyncOpenAI
 
 from tardigrade.chaos import current_model_swap
 from tardigrade.config import get_settings
+from tardigrade.guardrails import GuardrailBlock, validate_tool_args
 from tardigrade.mcp_client import call_tool, list_tools
 from tardigrade.tiers.types import Reply, Tier
 
@@ -113,8 +114,14 @@ async def answer(message: str, history: Sequence[dict[str, str]] | None = None) 
         })
         for tc in msg.tool_calls:
             args = json.loads(tc.function.arguments or "{}")
-            result = await call_tool(tc.function.name, args)
-            tool_calls_made.append({"name": tc.function.name, "args": args, "result": result[:120]})
+            try:
+                args = validate_tool_args(tc.function.name, args)
+                result = await call_tool(tc.function.name, args)
+                tool_calls_made.append({"name": tc.function.name, "args": args, "result": result[:120]})
+            except GuardrailBlock as gb:
+                result = f"GUARDRAIL_BLOCKED: {gb.reason}"
+                tool_calls_made.append({"name": tc.function.name, "args": args,
+                                         "result": result, "guardrail_blocked": True})
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,

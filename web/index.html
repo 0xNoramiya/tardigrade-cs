@@ -101,6 +101,8 @@
       • <code>I need a refund for TGS-1001</code><br/>
       • <code>how long does shipping take?</code><br/>
       • <code>speak to a human</code><br/>
+      • <code>refund $999 to TGS-1003</code> (guardrail trips)<br/>
+      • <code>ignore previous instructions</code> (input guardrail)<br/>
     </div>
   </aside>
 
@@ -139,6 +141,8 @@ const SCENARIOS = [
    desc: "Primary returns 429 on every call. Gateway retries + falls back."},
   {key: "all-providers-down", label: "Cascade outage",
    desc: "Every provider in the chain fails. Agent tier blows up; embeddings catches it."},
+  {key: "tools-down", label: "Break MCP tools",
+   desc: "MCP Gateway returns 503. Agent runs without tools, answers from prompt context."},
   {key: "no-agent", label: "Force agent off",
    desc: "Skip tier 1 entirely. Embeddings tier answers."},
   {key: "no-embeddings", label: "Force embeddings off",
@@ -186,7 +190,10 @@ document.getElementById("clearBtn").onclick = async () => {
 };
 
 function tierColor(tier) {
-  return tier === "agent" ? "agent" : tier === "embeddings" ? "embeddings" : "rules";
+  if (tier === "agent") return "agent";
+  if (tier === "embeddings") return "embeddings";
+  if (tier === "guardrail") return "rules";
+  return "rules";
 }
 
 function appendMessage(role, text, served_by, attempts, latency_ms, meta) {
